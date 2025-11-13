@@ -193,12 +193,10 @@ def arma_theoretical_spectral_density(frequencies: np.ndarray, sigma: float, phi
 
 
 def fit_and_forecast(
-        model: BaseForecaster, time_series: pd.Series, train_size: int, horizon: Optional[int] = None, coverage: Optional[List[float]] = None
+        model: BaseForecaster, time_series: pd.Series, train_size: int, horizon: Optional[int] = None
 ) -> Tuple[pd.Series, pd.Series, pd.Series]:
     if horizon is None:
         horizon = len(time_series) - train_size
-    if coverage is None:
-        coverage = [.75, .95]
     train_ts = time_series[:train_size]
     test_ts = time_series[train_size:train_size+horizon]
     model.fit(train_ts)
@@ -208,7 +206,7 @@ def fit_and_forecast(
         fitted_values = None
     pred = model.predict(fh=test_ts.index)
     if model.get_tag("capability:pred_int"):
-        interval = model.predict_interval(fh=test_ts.index, coverage=coverage)
+        interval = model.predict_interval(fh=test_ts.index, coverage=[.75, .95])
     else:
         interval = None
     return fitted_values, pred, interval
@@ -337,27 +335,38 @@ def plot_fft(
         show_estimated_density: bool = False, smoothing_iteration: int = 0, smoothing_window_percent: float = 0.05
 ) -> Optional[Tuple[np.ndarray, np.ndarray, np.ndarray]]:
     n = len(time_series)
-    xf = np.fft.fftfreq(n, sample_spacing)
-    yf = np.fft.fft(time_series) / n                            # numpy FFT output is not normalized.
-    spectrum = np.abs(yf)                                       # magnitude spectrum
+    # Frequency bins (cycles per sample_spacing)
+    xf = np.fft.fftfreq(n, d=sample_spacing)
+    # Compute FFT (not normalized by default)
+    yf = np.fft.fft(time_series) / n  # divide by n for amplitude normalization
+    # Magnitude or power spectrum
+    spectrum = np.abs(yf)
     if periodogram:
-        spectrum = spectrum**2
+        spectrum = spectrum ** 2
     if not show_negative_freqs:
-        xf = xf[:n//2]
-        spectrum = spectrum[:n//2] * 2                          # multiply by 2 to account for the negative frequencies
+        half_n = n // 2 + 1 if n % 2 == 0 else (n + 1) // 2
+        xf = xf[:half_n]
+        xf[-1] = abs(xf[-1])  # flip Nyquist to positive (numpy returns negative nyquist freq)
+        yf = yf[:half_n]
+        spectrum = spectrum[:half_n]
+        if n % 2 == 0:
+            spectrum[1:-1] *= 2  # double interior bins
+        else:
+            spectrum[1:] *= 2  # double everything but DC
     ax.stem(xf, spectrum, basefmt=" ")
     if show_estimated_density:
-        smoothed_spectrum = spectrum
-        smoothing_window = max(1, int(n*smoothing_window_percent))
+        smoothed = spectrum.copy()
+        window = max(1, int(len(smoothed) * smoothing_window_percent))
         for _ in range(smoothing_iteration):
-            smoothed_spectrum = moving_average_smoothing(smoothed_spectrum, smoothing_window, mode='same')[-1]
-        label = "Estimated density"
-        if smoothing_iteration > 0:
-            label = f"{label} ({smoothing_iteration}x{smoothing_window}-MA)"
-        ax.plot(xf, smoothed_spectrum, label=label, color='black')
-    ax.set_title('Periodogram' if periodogram else 'DFT (Magnitude spectrum)')
+            smoothed = moving_average_smoothing(smoothed, window, mode="same")[-1]
+        label = f"Estimated density ({smoothing_iteration}×{window}-MA)"
+        ax.plot(xf, smoothed, color="black", label=label)
+    ax.set_title(
+        f"{'Periodogram' if periodogram else 'DFT Magnitude'} "
+        f"({'One-sided' if not show_negative_freqs else 'Two-sided'})"
+    )
     ax.set_xlabel(f'Frequency [cycles per {sample_spacing_name}]')
-    ax.set_ylabel('Value' if periodogram else 'Magnitude')
+    ax.set_ylabel('Power' if periodogram else 'Magnitude')
     if log_scale:
         ax.set_yscale('log')
     ax.get_figure().tight_layout()
