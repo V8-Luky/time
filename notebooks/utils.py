@@ -193,10 +193,12 @@ def arma_theoretical_spectral_density(frequencies: np.ndarray, sigma: float, phi
 
 
 def fit_and_forecast(
-        model: BaseForecaster, time_series: pd.Series, train_size: int, horizon: Optional[int] = None
+        model: BaseForecaster, time_series: pd.Series, train_size: int, horizon: Optional[int] = None, coverage: Optional[List[float]] = None
 ) -> Tuple[pd.Series, pd.Series, pd.Series]:
     if horizon is None:
         horizon = len(time_series) - train_size
+    if coverage is None:
+        coverage = [.75, .95]
     train_ts = time_series[:train_size]
     test_ts = time_series[train_size:train_size+horizon]
     model.fit(train_ts)
@@ -206,7 +208,7 @@ def fit_and_forecast(
         fitted_values = None
     pred = model.predict(fh=test_ts.index)
     if model.get_tag("capability:pred_int"):
-        interval = model.predict_interval(fh=test_ts.index, coverage=[.75, .95])
+        interval = model.predict_interval(fh=test_ts.index, coverage=coverage)
     else:
         interval = None
     return fitted_values, pred, interval
