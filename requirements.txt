@@ -17,3 +17,5 @@ sktime==0.33.1          # all_extras modifier does not work on mac ARM-based pro
 statsmodels==0.14.2
 tqdm==4.67.1
 yfinance==0.2.66
+torch==2.5.1
+lightning==2.6.0
